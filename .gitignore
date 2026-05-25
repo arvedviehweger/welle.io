@@ -18,3 +18,9 @@ welle.io.pro.user
 cmake_install.cmake
 cmake_uninstall.cmake
 install_manifest.txt
+
+# Out-of-source build directories (build-macos, build-ios, ...)
+build-*/
+
+# macOS Finder metadata
+.DS_Store

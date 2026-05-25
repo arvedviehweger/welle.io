@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.16)
 
 project(Welle.Io LANGUAGES C CXX)
 
@@ -15,15 +15,29 @@ endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 14)
 
-option(BUILD_WELLE_IO    "Build Welle.io"                        ON  )
-option(BUILD_WELLE_CLI   "Build welle-cli"                       ON  )
-option(WITH_APP_BUNDLE   "Enable Application Bundle for macOS"   ON  )
-option(KISS_FFT          "KISS FFT instead of FFTW"              OFF )
-option(PROFILING         "Enable profiling (see README.md)"      OFF )
-option(AIRSPY            "Compile with Airspy support"           OFF )
-option(RTLSDR            "Compile with RTL-SDR support"          OFF )
-option(SOAPYSDR          "Compile with SoapySDR support"         OFF )
-option(FLAC              "Compile with flac support for streaming" OFF )
+# ---------------------------------------------------------------------------
+# Slimmed-down "rtl_tcp only" build (preparation for the iOS port)
+# ---------------------------------------------------------------------------
+# Compared to upstream welle.io this build:
+#   * keeps rtl_tcp as the ONLY input device (a plain TCP client, no libusb)
+#   * drops all USB-SDR backends: RTL-SDR, Airspy, SoapySDR, LimeSDR
+#   * always builds the FFT and the audio codecs from the bundled sources in
+#     src/libs (KISS FFT, mpg123, faad2) -> no external libfftw3 / libfaad /
+#     libmpg123 dependency
+#   * does not build the welle-cli command line tool
+#   * builds MPRIS / D-Bus support only on explicit request (Linux desktop)
+# The only remaining native dependency is Qt itself.
+# ---------------------------------------------------------------------------
+
+option(BUILD_WELLE_IO  "Build Welle.io"                                  ON  )
+option(WITH_APP_BUNDLE "Enable Application Bundle for macOS"              ON  )
+option(PROFILING       "Enable profiling (see README.md)"                OFF )
+option(MPRIS           "Build MPRIS / D-Bus support (Linux desktop only)" OFF )
+
+# iOS code-signing / bundle settings (only used when building for iOS).
+# Override on the command line, e.g. -DWELLE_IO_TEAM_ID=ABCDE12345
+set(WELLE_IO_BUNDLE_ID "io.welle.welle" CACHE STRING "iOS app bundle identifier")
+set(WELLE_IO_TEAM_ID   ""               CACHE STRING "Apple Development Team ID for iOS code signing")
 
 add_definitions(-Wall)
 add_definitions(-g)
@@ -38,8 +52,6 @@ if(NOT CMAKE_BUILD_TYPE)
    message(STATUS "Build type not specified: defaulting to release.")
 endif(NOT CMAKE_BUILD_TYPE)
 set(CMAKE_BUILD_TYPE ${CMAKE_BUILD_TYPE} CACHE STRING "")
-
-#enable_testing()
 
 list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_SOURCE_DIR}/cmake/Modules)
 
@@ -59,7 +71,7 @@ if(BUILD_WELLE_IO)
     find_package(Qt6 COMPONENTS Widgets Quick QuickControls2 Multimedia Charts Qml REQUIRED)
     set(CMAKE_AUTOMOC ON)
     if(ANDROID AND Qt6Core_VERSION VERSION_LESS 6.8.0)
-        # Woraround for QTBUG-106466
+        # Workaround for QTBUG-106466
         set(CMAKE_AUTORCC ON)
     endif()
 endif()
@@ -68,141 +80,100 @@ if(PROFILING)
     add_definitions(-DWITH_PROFILING)
 endif()
 
-find_package(ALSA)
-if(ALSA_FOUND)
-    add_definitions(-DHAVE_ALSA)
-endif()
-
-
-if(BUILD_WELLE_CLI AND NOT ANDROID)
-    find_package(Lame REQUIRED)
-    if (FLAC)
-    find_package(FLACPP REQUIRED) # test if FLAC is installed on the system
-    add_definitions(-DHAVE_FLAC)
-    endif()
-endif()
-
 find_package(Threads REQUIRED)
 
-if(NOT ANDROID)
-    if(KISS_FFT)
-        add_definitions(-DKISSFFT)
-        set(fft_sources src/libs/kiss_fft/kiss_fft.c)
-        set(KISS_INCLUDE_DIRS src/libs/kiss_fft)
-    else()
-        find_package(FFTW3f REQUIRED)
-        set(fft_sources "")
-        set(KISS_INCLUDE_DIRS "")
-    endif()
-    find_package(Faad REQUIRED)
-    find_package(MPG123 REQUIRED)
-else()
-    # For KISSFFT
-    add_definitions(-DKISSFFT)
-    include_directories(
-        src/libs/kiss_fft
-    )
-    set(fft_sources
-        src/libs/kiss_fft/kiss_fft.c
-    )
+# ---------------------------------------------------------------------------
+# FFT and audio codecs are always built from the bundled sources in src/libs.
+# This removes the external libfftw3, libfaad and libmpg123 dependencies.
+# ---------------------------------------------------------------------------
 
-    # For MPG123
-    add_definitions(-DOPT_GENERIC)
-    include_directories(
-        src/libs/mpg123
-    )
-    set(mpg123_sources
-        src/libs/mpg123/compat.c
-        src/libs/mpg123/compat_str.c
-        src/libs/mpg123/parse.c
-        src/libs/mpg123/frame.c
-        src/libs/mpg123/format.c
-        src/libs/mpg123/dct64.c
-        src/libs/mpg123/equalizer.c
-        src/libs/mpg123/id3.c
-        src/libs/mpg123/icy.c
-        src/libs/mpg123/icy2utf8.c
-        src/libs/mpg123/optimize.c
-        src/libs/mpg123/readers.c
-        src/libs/mpg123/tabinit.c
-        src/libs/mpg123/libmpg123.c
-        src/libs/mpg123/index.c
-        src/libs/mpg123/layer1.c
-        src/libs/mpg123/layer2.c
-        src/libs/mpg123/layer3.c
-        src/libs/mpg123/dither.c
-        src/libs/mpg123/feature.c
-        src/libs/mpg123/synth.c
-        src/libs/mpg123/synth_real.c
-        src/libs/mpg123/ntom.c
-        src/libs/mpg123/synth_8bit.c
-        src/libs/mpg123/synth_s32.c
-        src/libs/mpg123/stringbuf.c
-    )
+# KISS FFT (replaces FFTW)
+add_definitions(-DKISSFFT)
+include_directories(src/libs/kiss_fft)
+set(fft_sources
+    src/libs/kiss_fft/kiss_fft.c
+)
 
-    # For FAAD
-    add_definitions(-DHAVE_CONFIG_H)
-    include_directories(
-        src/libs/faad2
-        src/libs/faad2/include
-        src/libs/faad2/libfaad
-        src/libs/faad2/libfaad/codebook
-    )
-    set(faad_sources
-        src/libs/faad2/libfaad/bits.c
-        src/libs/faad2/libfaad/cfft.c
-        src/libs/faad2/libfaad/common.c
-        src/libs/faad2/libfaad/decoder.c
-        src/libs/faad2/libfaad/drc.c
-        src/libs/faad2/libfaad/drm_dec.c
-        src/libs/faad2/libfaad/error.c
-        src/libs/faad2/libfaad/filtbank.c
-        src/libs/faad2/libfaad/hcr.c
-        src/libs/faad2/libfaad/huffman.c
-        src/libs/faad2/libfaad/ic_predict.c
-        src/libs/faad2/libfaad/is.c
-        src/libs/faad2/libfaad/lt_predict.c
-        src/libs/faad2/libfaad/mdct.c
-        src/libs/faad2/libfaad/mp4.c
-        src/libs/faad2/libfaad/ms.c
-        src/libs/faad2/libfaad/output.c
-        src/libs/faad2/libfaad/pns.c
-        src/libs/faad2/libfaad/ps_dec.c
-        src/libs/faad2/libfaad/ps_syntax.c
-        src/libs/faad2/libfaad/pulse.c
-        src/libs/faad2/libfaad/rvlc.c
-        src/libs/faad2/libfaad/sbr_dct.c
-        src/libs/faad2/libfaad/sbr_dec.c
-        src/libs/faad2/libfaad/sbr_e_nf.c
-        src/libs/faad2/libfaad/sbr_fbt.c
-        src/libs/faad2/libfaad/sbr_hfadj.c
-        src/libs/faad2/libfaad/sbr_hfgen.c
-        src/libs/faad2/libfaad/sbr_huff.c
-        src/libs/faad2/libfaad/sbr_qmf.c
-        src/libs/faad2/libfaad/sbr_syntax.c
-        src/libs/faad2/libfaad/sbr_tf_grid.c
-        src/libs/faad2/libfaad/specrec.c
-        src/libs/faad2/libfaad/ssr.c
-        src/libs/faad2/libfaad/ssr_fb.c
-        src/libs/faad2/libfaad/ssr_ipqf.c
-        src/libs/faad2/libfaad/syntax.c
-        src/libs/faad2/libfaad/tns.c
-    )
-endif()
+# mpg123 - DAB (MP2) decoder
+add_definitions(-DOPT_GENERIC)
+include_directories(src/libs/mpg123)
+set(mpg123_sources
+    src/libs/mpg123/compat.c
+    src/libs/mpg123/compat_str.c
+    src/libs/mpg123/parse.c
+    src/libs/mpg123/frame.c
+    src/libs/mpg123/format.c
+    src/libs/mpg123/dct64.c
+    src/libs/mpg123/equalizer.c
+    src/libs/mpg123/id3.c
+    src/libs/mpg123/icy.c
+    src/libs/mpg123/icy2utf8.c
+    src/libs/mpg123/optimize.c
+    src/libs/mpg123/readers.c
+    src/libs/mpg123/tabinit.c
+    src/libs/mpg123/libmpg123.c
+    src/libs/mpg123/index.c
+    src/libs/mpg123/layer1.c
+    src/libs/mpg123/layer2.c
+    src/libs/mpg123/layer3.c
+    src/libs/mpg123/dither.c
+    src/libs/mpg123/feature.c
+    src/libs/mpg123/synth.c
+    src/libs/mpg123/synth_real.c
+    src/libs/mpg123/ntom.c
+    src/libs/mpg123/synth_8bit.c
+    src/libs/mpg123/synth_s32.c
+    src/libs/mpg123/stringbuf.c
+)
 
-if (RTLSDR)
-    find_package(LibRTLSDR REQUIRED)
-endif()
-
-if (AIRSPY)
-    find_package(LibAIRSPY REQUIRED)
-endif()
-
-if (SOAPYSDR)
-  find_package(SoapySDR NO_MODULE REQUIRED)
-  # Note: SoapySDRConfig.cmake sets C++11 standard so it needs to be reset to C++14
-  set(CMAKE_CXX_STANDARD 14)
-endif()
+# faad2 - DAB+ (AAC) decoder
+add_definitions(-DHAVE_CONFIG_H)
+include_directories(
+    src/libs/faad2
+    src/libs/faad2/include
+    src/libs/faad2/libfaad
+    src/libs/faad2/libfaad/codebook
+)
+set(faad_sources
+    src/libs/faad2/libfaad/bits.c
+    src/libs/faad2/libfaad/cfft.c
+    src/libs/faad2/libfaad/common.c
+    src/libs/faad2/libfaad/decoder.c
+    src/libs/faad2/libfaad/drc.c
+    src/libs/faad2/libfaad/drm_dec.c
+    src/libs/faad2/libfaad/error.c
+    src/libs/faad2/libfaad/filtbank.c
+    src/libs/faad2/libfaad/hcr.c
+    src/libs/faad2/libfaad/huffman.c
+    src/libs/faad2/libfaad/ic_predict.c
+    src/libs/faad2/libfaad/is.c
+    src/libs/faad2/libfaad/lt_predict.c
+    src/libs/faad2/libfaad/mdct.c
+    src/libs/faad2/libfaad/mp4.c
+    src/libs/faad2/libfaad/ms.c
+    src/libs/faad2/libfaad/output.c
+    src/libs/faad2/libfaad/pns.c
+    src/libs/faad2/libfaad/ps_dec.c
+    src/libs/faad2/libfaad/ps_syntax.c
+    src/libs/faad2/libfaad/pulse.c
+    src/libs/faad2/libfaad/rvlc.c
+    src/libs/faad2/libfaad/sbr_dct.c
+    src/libs/faad2/libfaad/sbr_dec.c
+    src/libs/faad2/libfaad/sbr_e_nf.c
+    src/libs/faad2/libfaad/sbr_fbt.c
+    src/libs/faad2/libfaad/sbr_hfadj.c
+    src/libs/faad2/libfaad/sbr_hfgen.c
+    src/libs/faad2/libfaad/sbr_huff.c
+    src/libs/faad2/libfaad/sbr_qmf.c
+    src/libs/faad2/libfaad/sbr_syntax.c
+    src/libs/faad2/libfaad/sbr_tf_grid.c
+    src/libs/faad2/libfaad/specrec.c
+    src/libs/faad2/libfaad/ssr.c
+    src/libs/faad2/libfaad/ssr_fb.c
+    src/libs/faad2/libfaad/ssr_ipqf.c
+    src/libs/faad2/libfaad/syntax.c
+    src/libs/faad2/libfaad/tns.c
+)
 
 include_directories(
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -213,12 +184,6 @@ include_directories(
     src/input
     src/gui
     src/libs/fec
-    ${FFTW3F_INCLUDE_DIRS}
-    ${KISS_INCLUDE_DIRS}
-    ${FAAD_INCLUDE_DIRS}
-    ${LIBRTLSDR_INCLUDE_DIRS}
-    ${SoapySDR_INCLUDE_DIRS}
-    ${FLACPP_INCLUDE_DIRS}
 )
 
 set(backend_sources
@@ -266,7 +231,10 @@ set(welle_io_sources
     src/welle-gui/waterfallitem.cpp
 )
 
-if(Qt6DBus_FOUND)
+# MPRIS / D-Bus is a Linux-desktop only feature and is off by default.
+if(MPRIS AND NOT ANDROID)
+    find_package(Qt6 COMPONENTS DBus REQUIRED)
+    add_definitions(-DHAVE_MPRIS)
     list(APPEND welle_io_sources
         src/welle-gui/mpris/mpris.cpp
         src/welle-gui/mpris/mpris_mp2.cpp
@@ -283,36 +251,21 @@ if(ANDROID)
     )
 endif()
 
-set(welle_cli_sources
-    src/welle-cli/welle-cli.cpp
-    src/welle-cli/alsa-output.cpp
-    src/welle-cli/webradiointerface.cpp
-    src/welle-cli/jsonconvert.cpp
-    src/welle-cli/webprogrammehandler.cpp
-    src/welle-cli/tests.cpp
-)
+if(IOS)
+    # Objective-C++ glue (audio session configuration, etc.)
+    list(APPEND welle_io_sources
+        src/welle-gui/ios/ios_platform.mm
+    )
+endif()
 
+# rtl_tcp is the only input device. It is a plain TCP client and needs no
+# external libraries beyond the C library / Qt.
 set(input_sources
     src/input/input_factory.cpp
     src/input/null_device.cpp
     src/input/raw_file.cpp
     src/input/rtl_tcp.cpp
 )
-
-if(LIBRTLSDR_FOUND)
-    add_definitions (-DHAVE_RTLSDR)
-    set(input_sources  ${input_sources} src/input/rtl_sdr.cpp)
-endif()
-
-if(LIBAIRSPY_FOUND)
-    add_definitions (-DHAVE_AIRSPY)
-    set(input_sources  ${input_sources} src/input/airspy_sdr.cpp)
-endif()
-
-if(SoapySDR_FOUND)
-    add_definitions (-DHAVE_SOAPYSDR)
-    set(input_sources  ${input_sources} src/input/soapy_sdr.cpp)
-endif()
 
 if(NOT GIT_COMMIT_HASH)
   execute_process(
@@ -406,24 +359,47 @@ if(BUILD_WELLE_IO)
                 Qt6::Quick3DUtils
             )
         endif()
-    else()
-        # Qt6::DBus should not be used for Android
-        find_package(Qt6 COMPONENTS DBus REQUIRED)
-        target_link_libraries (${executableName} PRIVATE Qt6::DBus)
     endif()
 
     target_link_libraries (${executableName} PRIVATE
-      ${LIBRTLSDR_LIBRARIES}
-      ${LIBAIRSPY_LIBRARIES}
-      ${FFTW3F_LIBRARIES}
-      ${FAAD_LIBRARIES}
-      ${SoapySDR_LIBRARIES}
-      ${MPG123_LIBRARIES}
       Threads::Threads
       Qt6::Core Qt6::Widgets Qt6::Multimedia Qt6::Charts Qt6::Qml Qt6::Quick Qt6::QuickControls2
     )
 
-    if(APPLE AND WITH_APP_BUNDLE)
+    if(MPRIS AND NOT ANDROID)
+        target_link_libraries (${executableName} PRIVATE Qt6::DBus)
+    endif()
+
+    if(IOS)
+        # --- iOS application bundle ---
+        set_target_properties(${executableName} PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/welle-gui/ios/Info.plist"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${WELLE_IO_BUNDLE_ID}"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+            XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
+        )
+
+        # App icon: the asset catalog holds the AppIcon image set.
+        set(ios_asset_catalog "${CMAKE_CURRENT_SOURCE_DIR}/src/welle-gui/ios/Assets.xcassets")
+        target_sources(${executableName} PRIVATE "${ios_asset_catalog}")
+        set_source_files_properties("${ios_asset_catalog}" PROPERTIES
+            MACOSX_PACKAGE_LOCATION Resources)
+
+        # Native iOS audio-session code (ios_platform.mm) needs AVFoundation.
+        target_link_libraries(${executableName} PRIVATE "-framework AVFoundation")
+
+        # Qt Multimedia on iOS uses the FFmpeg backend; embed its static
+        # libraries (shipped with the Qt online installer) into the app bundle.
+        qt_add_ios_ffmpeg_libraries(${executableName})
+
+        # Development team is only needed for signing on a real device.
+        # Leave WELLE_IO_TEAM_ID empty for simulator builds.
+        if(WELLE_IO_TEAM_ID)
+            set_target_properties(${executableName} PROPERTIES
+                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${WELLE_IO_TEAM_ID}")
+        endif()
+    elseif(APPLE AND WITH_APP_BUNDLE)
         set(macOsIcon ${CMAKE_CURRENT_SOURCE_DIR}/src/welle-gui/icons/icon.icns)
         set_source_files_properties(${macOsIcon} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
         target_sources(${executableName} PRIVATE ${macOsIcon})
@@ -454,66 +430,6 @@ if(BUILD_WELLE_IO)
             INSTALL (FILES ${PROJECT_SOURCE_DIR}/src/welle-gui/icons/128x128/welle-io.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/128x128/apps RENAME io.welle.welle-gui.png)
             INSTALL (FILES ${PROJECT_SOURCE_DIR}/src/welle-gui/icons/256x256/welle-io.png DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/icons/hicolor/256x256/apps RENAME io.welle.welle-gui.png)
         endif()
-    endif()
-endif()
-
-if(BUILD_WELLE_CLI AND NOT ANDROID)
-    set(cliExecutableName welle-cli)
-    add_executable (${cliExecutableName}
-        ${welle_cli_sources}
-        ${backend_sources}
-        ${input_sources}
-        ${fft_sources}
-        index.html.h
-        index.js.h
-        favicon.ico.h)
-
-    if(CMAKE_BUILD_TYPE MATCHES Debug)
-      SET_TARGET_PROPERTIES(${cliExecutableName} PROPERTIES COMPILE_FLAGS "-O2 -fno-omit-frame-pointer -fsanitize=address")
-      SET_TARGET_PROPERTIES(${cliExecutableName} PROPERTIES LINK_FLAGS "-fno-omit-frame-pointer -fsanitize=address")
-    endif(CMAKE_BUILD_TYPE MATCHES Debug)
-
-    target_link_libraries (${cliExecutableName}
-      ${LIBRTLSDR_LIBRARIES}
-      ${LIBAIRSPY_LIBRARIES}
-      ${FFTW3F_LIBRARIES}
-      ${FAAD_LIBRARIES}
-      ${ALSA_LIBRARIES}
-      ${LAME_LIBRARIES}
-      ${SoapySDR_LIBRARIES}
-      ${MPG123_LIBRARIES}
-      ${FLACPP_LIBRARIES}
-      Threads::Threads
-    )
-
-    find_program(RESOURCE_COMPILER xxd)
-    add_custom_command(
-        OUTPUT index.html.h
-        COMMAND ${RESOURCE_COMPILER} -i -n index_html
-                ${CMAKE_SOURCE_DIR}/src/welle-cli/index.html
-                index.html.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/src/welle-cli/index.html)
-    set_property(SOURCE index.html.h PROPERTY SKIP_AUTOMOC ON)
-
-    add_custom_command(
-        OUTPUT index.js.h
-        COMMAND ${RESOURCE_COMPILER} -i -n index_js
-                ${CMAKE_SOURCE_DIR}/src/welle-cli/index.js
-                index.js.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/src/welle-cli/index.js)
-    set_property(SOURCE index.js.h PROPERTY SKIP_AUTOMOC ON)
-
-    add_custom_command(
-        OUTPUT favicon.ico.h
-        COMMAND ${RESOURCE_COMPILER} -i -n favicon_ico
-                ${CMAKE_SOURCE_DIR}/src/welle-cli/favicon.ico
-                favicon.ico.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/src/welle-cli/favicon.ico)
-    set_property(SOURCE favicon.ico.h PROPERTY SKIP_AUTOMOC ON)
-
-    if(UNIX AND NOT APPLE OR NOT WITH_APP_BUNDLE)
-        INSTALL (TARGETS ${cliExecutableName} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-        INSTALL (FILES src/welle-cli/doc/man/welle-cli.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
     endif()
 endif()
 

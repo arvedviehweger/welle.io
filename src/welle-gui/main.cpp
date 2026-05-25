@@ -46,6 +46,10 @@
 #include "debug_output.h"
 #include "waterfallitem.h"
 
+#ifdef Q_OS_IOS
+#include "ios/ios_platform.h"
+#endif
+
 int main(int argc, char** argv)
 {
     QString Version = QString(CURRENT_VERSION) + " Git: " + GITHASH;
@@ -63,6 +67,12 @@ int main(int argc, char** argv)
 
     // Create new QT application
     QApplication app(argc, argv);
+
+#ifdef Q_OS_IOS
+    // Keep audio playing in silent mode and in the background
+    welle_io_configure_ios_audio_session();
+#endif
+
     qDebug() << "main: Platform name" <<  app.platformName();
 
     //Initialise translation

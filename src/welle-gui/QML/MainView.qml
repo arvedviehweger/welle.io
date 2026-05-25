@@ -73,7 +73,8 @@ ApplicationWindow {
     title: isStationNameInWindowTitle ? radioController.title.trim() + " - welle.io" : "welle.io"
 
     visible: true // According to https://bugreports.qt.io/browse/QTBUG-35244
-    visibility: isFullScreen ? Window.FullScreen : Window.Windowed
+    // On iOS the app always runs full screen (hides the status bar)
+    visibility: (isFullScreen || Qt.platform.os === "ios") ? Window.FullScreen : Window.Windowed
 
     Component.onCompleted: {
         console.debug("os: " + Qt.platform.os)

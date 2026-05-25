@@ -51,7 +51,7 @@
 #include "dab-constants.h"
 #include "radio_controller.h"
 
-#ifndef __ANDROID__
+#ifdef HAVE_MPRIS
     #include "mpris/mpris.h"
 #endif
 
@@ -138,7 +138,7 @@ private:
     QSettings settings;
     QStringList m_comboList;
 
-#ifndef __ANDROID__
+#ifdef HAVE_MPRIS
     Mpris *mpris;
 #endif
 

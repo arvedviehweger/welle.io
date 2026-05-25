@@ -95,7 +95,7 @@ CGUIHelper::CGUIHelper(CRadioController *RadioController, QObject *parent)
 
 #endif
 
-#ifndef __ANDROID__
+#ifdef HAVE_MPRIS
     mpris = new Mpris(radioController, this);
 #endif
     CDebugOutput::setCGUI(this);
@@ -744,11 +744,21 @@ void FileActivityResultReceiver::handleActivityResult(int receiverRequestCode, i
 #ifndef __ANDROID__
 void CGUIHelper::updateMprisStationList(QString serializedJson, QString listType, int index)
 {
+#ifdef HAVE_MPRIS
     mpris->setStationArray(serializedJson, listType, index);
+#else
+    Q_UNUSED(serializedJson);
+    Q_UNUSED(listType);
+    Q_UNUSED(index);
+#endif
 }
 
 void CGUIHelper::setMprisFullScreenState(bool isFullscreen)
 {
+#ifdef HAVE_MPRIS
     mpris->setFullscreenState(isFullscreen);
+#else
+    Q_UNUSED(isFullscreen);
+#endif
 }
 #endif
