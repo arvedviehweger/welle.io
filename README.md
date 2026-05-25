@@ -5,7 +5,7 @@ Please see the project website https://www.welle.io for a user oriented document
 
 ## Building for iOS
 
-This fork can be built as an iOS app for iPhone and iPad. The iOS build uses **rtl_tcp as its only input**: an RTL-SDR dongle cannot be connected to an iPhone or iPad directly, so welle.io connects over the network to an `rtl_tcp` server running on another device (for example a Raspberry Pi, a PC, or an Android phone running the *rtl_tcp_andro* app).
+This fork can be built as an iOS app for iPhone and iPad. The iOS build uses **rtl_tcp as its only input**: an RTL-SDR dongle cannot be connected to an iPhone or iPad directly, so welle.io connects over the network to an `rtl_tcp` server running on another device (for example a Raspberry Pi or a PC).
 
 ### Requirements
 
@@ -30,13 +30,8 @@ Select the `welle-io` scheme and a destination, then build and run. The iOS Simu
 
 ### Running on a physical device
 
-Building for a real device requires code signing. Either enable "Automatically manage signing" for the `welle-io` target in Xcode, or pass your Apple Development Team ID and a unique bundle identifier when configuring:
+Building for a real device requires code signing. Either enable "Automatically manage signing" for the `welle-io` target in Xcode. You might need to adjust the bundle ID for automatic code signing to work.
 
-```
-qt-cmake -S . -B build-ios -G Xcode \
-    -DWELLE_IO_TEAM_ID=ABCDE12345 \
-    -DWELLE_IO_BUNDLE_ID=com.example.welleio
-```
 
 ### Selecting the input
 
