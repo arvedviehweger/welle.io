@@ -3,6 +3,45 @@
 This repository contains the implementation of an SDR DAB/DAB+ receiver.  
 Please see the project website https://www.welle.io for a user oriented documentation.
 
+## Building for iOS
+
+This fork can be built as an iOS app for iPhone and iPad. The iOS build uses **rtl_tcp as its only input**: an RTL-SDR dongle cannot be connected to an iPhone or iPad directly, so welle.io connects over the network to an `rtl_tcp` server running on another device (for example a Raspberry Pi, a PC, or an Android phone running the *rtl_tcp_andro* app).
+
+### Requirements
+
+* macOS with a recent **Xcode** (iOS 17 SDK or newer).
+* **Qt 6.8 or newer for iOS**, installed with the [Qt Online Installer](https://www.qt.io/download-qt-installer-oss). Select the **iOS** and **macOS** components, and add the libraries **Qt Multimedia**, **Qt Charts** and the **Qt 5 Compatibility Module**.
+
+### Build
+
+Configure the project with the `qt-cmake` wrapper from the iOS Qt kit (located in `<Qt>/<version>/ios/bin/`). It generates an Xcode project:
+
+```
+qt-cmake -S . -B build-ios -G Xcode
+```
+
+Then open the generated project and run it from Xcode:
+
+```
+open build-ios/Welle.Io.xcodeproj
+```
+
+Select the `welle-io` scheme and a destination, then build and run. The iOS Simulator needs no code signing.
+
+### Running on a physical device
+
+Building for a real device requires code signing. Either enable "Automatically manage signing" for the `welle-io` target in Xcode, or pass your Apple Development Team ID and a unique bundle identifier when configuring:
+
+```
+qt-cmake -S . -B build-ios -G Xcode \
+    -DWELLE_IO_TEAM_ID=ABCDE12345 \
+    -DWELLE_IO_BUNDLE_ID=com.example.welleio
+```
+
+### Selecting the input
+
+There is no USB input on iOS. In the app, open *Settings &rarr; Global receiver settings*, turn off **Auto detect**, choose **rtl-tcp**, and enter the host name and port of your `rtl_tcp` server.
+
 **Build status**
 - Linux (Flatpak x86_64 and arm64): [![Linux build](https://github.com/AlbrechtL/welle.io/actions/workflows/linux.yml/badge.svg)](https://github.com/AlbrechtL/welle.io/actions/workflows/linux.yml)
 - Windows (Installer x86_64): [![Windows build](https://github.com/AlbrechtL/welle.io/actions/workflows/windows.yml/badge.svg)](https://github.com/AlbrechtL/welle.io/actions/workflows/windows.yml)
